@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-func configValue(c Config, key string) (any, error) {
+func ConfigValue(c Config, key string) (any, error) {
 	configured := map[string]any{}
 
 	for name, p := range c.Projects {
@@ -69,7 +69,7 @@ func configValue(c Config, key string) (any, error) {
 	return value, nil
 }
 
-func setConfigValue(c *Config, key, value string) error {
+func SetConfigValue(c *Config, key, value string) error {
 	parts := strings.Split(key, ".")
 
 	if len(parts) == 3 && parts[0] == "sources" && parts[2] == "path" {
@@ -79,7 +79,7 @@ func setConfigValue(c *Config, key, value string) error {
 			return fmt.Errorf("source index out of range")
 		}
 
-		path, err := canonicalPath(value)
+		path, err := CanonicalPath(value)
 
 		if err != nil {
 			return err
@@ -102,7 +102,7 @@ func setConfigValue(c *Config, key, value string) error {
 	if len(parts) == 3 {
 		switch parts[2] {
 		case "path":
-			path, err := canonicalPath(value)
+			path, err := CanonicalPath(value)
 
 			if err != nil {
 				return err
@@ -169,9 +169,9 @@ func setConfigValue(c *Config, key, value string) error {
 	return nil
 }
 
-func editConfig(path string, c Config) error {
+func EditConfig(path string, c Config) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err = saveConfig(path, c); err != nil {
+		if err = SaveConfig(path, c); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -204,12 +204,12 @@ func editConfig(path string, c Config) error {
 		return err
 	}
 
-	_, err = loadConfig(path)
+	_, err = LoadConfig(path)
 	return err
 }
 
-func toggleFavorite(path, projectPath string) (Config, error) {
-	lock, err := lockConfig(path, syscall.LOCK_EX)
+func ToggleFavorite(path, projectPath string) (Config, error) {
+	lock, err := LockConfig(path, syscall.LOCK_EX)
 
 	if err != nil {
 		return Config{}, err
@@ -217,26 +217,26 @@ func toggleFavorite(path, projectPath string) (Config, error) {
 
 	defer lock.Close()
 
-	c, err := loadConfig(path)
+	c, err := LoadConfig(path)
 
 	if err != nil {
 		return c, err
 	}
 
-	p, err := resolveProject(c, projectPath)
+	p, err := ResolveProject(c, projectPath)
 
 	if err != nil {
 		return c, err
 	}
 
-	if err := favorite(&c, p, !p.Favorite); err != nil {
+	if err := Favorite(&c, p, !p.Favorite); err != nil {
 		return c, err
 	}
 
-	return c, saveConfig(path, c)
+	return c, SaveConfig(path, c)
 }
 
-func favorite(c *Config, p Project, enabled bool) error {
+func Favorite(c *Config, p Project, enabled bool) error {
 	name := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
 			return r
@@ -246,7 +246,7 @@ func favorite(c *Config, p Project, enabled bool) error {
 	}, p.Name)
 
 	if existing, ok := c.Projects[name]; ok {
-		path, err := canonicalPath(existing.Path)
+		path, err := CanonicalPath(existing.Path)
 
 		if err != nil {
 			return err
@@ -261,7 +261,7 @@ func favorite(c *Config, p Project, enabled bool) error {
 		return nil
 	}
 
-	if !validName.MatchString(name) {
+	if !ValidName.MatchString(name) {
 		return fmt.Errorf("use project add <name> <path> to assign a valid name first")
 	}
 

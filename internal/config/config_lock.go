@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"crypto/sha256"
@@ -63,7 +63,7 @@ func configLockPath(path string) (string, error) {
 }
 
 // Keep lock files in place so atomic config replacements share one lock.
-func lockConfig(path string, mode int) (*os.File, error) {
+func LockConfig(path string, mode int) (*os.File, error) {
 	lockPath, err := configLockPath(path)
 
 	if err != nil {
@@ -96,8 +96,8 @@ func lockConfig(path string, mode int) (*os.File, error) {
 	return file, nil
 }
 
-func readConfig(path string) (Config, error) {
-	lock, err := lockConfig(path, syscall.LOCK_SH)
+func ReadConfig(path string) (Config, error) {
+	lock, err := LockConfig(path, syscall.LOCK_SH)
 
 	if err != nil {
 		return Config{}, err
@@ -105,5 +105,5 @@ func readConfig(path string) (Config, error) {
 
 	defer lock.Close()
 
-	return loadConfig(path)
+	return LoadConfig(path)
 }

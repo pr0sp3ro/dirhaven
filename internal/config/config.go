@@ -1,4 +1,5 @@
-package main
+// Package config loads, validates and saves the Dirhaven configuration.
+package config
 
 import (
 	"bytes"
@@ -34,11 +35,11 @@ type Config struct {
 	Projects map[string]Project `toml:"projects,omitempty"`
 }
 
-var validName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-var validWindowName = regexp.MustCompile(`^[A-Za-z0-9 _.-]+$`)
+var ValidName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var ValidWindowName = regexp.MustCompile(`^[A-Za-z0-9 _.-]+$`)
 var validPath = regexp.MustCompile(`^[A-Za-z0-9 _./~-]+$`)
 
-func configPath() (string, error) {
+func ConfigPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 
 	if dir == "" {
@@ -58,7 +59,7 @@ func configPath() (string, error) {
 	return filepath.Join(dir, "dirhaven", "config.toml"), nil
 }
 
-func loadConfig(path string) (Config, error) {
+func LoadConfig(path string) (Config, error) {
 	c := Config{Projects: map[string]Project{}}
 	data, err := os.ReadFile(path)
 
@@ -87,7 +88,7 @@ func (c Config) validate() error {
 			return fmt.Errorf("source path cannot be empty")
 		}
 
-		if _, err := expandPath(s.Path); err != nil {
+		if _, err := ExpandPath(s.Path); err != nil {
 			return fmt.Errorf("source: %w", err)
 		}
 	}
@@ -95,7 +96,7 @@ func (c Config) validate() error {
 	paths := map[string]string{}
 
 	for name, p := range c.Projects {
-		if !validName.MatchString(name) {
+		if !ValidName.MatchString(name) {
 			return fmt.Errorf("invalid project name %q: use letters, numbers, underscores or hyphens", name)
 		}
 
@@ -103,11 +104,11 @@ func (c Config) validate() error {
 			return fmt.Errorf("project %s has an empty path", name)
 		}
 
-		if _, err := expandPath(p.Path); err != nil {
+		if _, err := ExpandPath(p.Path); err != nil {
 			return fmt.Errorf("project %s: %w", name, err)
 		}
 
-		path, err := canonicalPath(p.Path)
+		path, err := CanonicalPath(p.Path)
 
 		if err == nil {
 			if existing, ok := paths[path]; ok {
@@ -122,12 +123,12 @@ func (c Config) validate() error {
 				return fmt.Errorf("project %s has a NUL character in its window settings", name)
 			}
 
-			if strings.TrimSpace(w.Name) == "" || !validWindowName.MatchString(w.Name) {
+			if strings.TrimSpace(w.Name) == "" || !ValidWindowName.MatchString(w.Name) {
 				return fmt.Errorf("project %s: invalid window name %q, use ASCII letters, digits, spaces, _, - or .", name, w.Name)
 			}
 
 			if w.Directory != "" {
-				if _, err := expandPath(w.Directory); err != nil {
+				if _, err := ExpandPath(w.Directory); err != nil {
 					return fmt.Errorf("project %s, window %s: %w", name, w.Name, err)
 				}
 			}
@@ -137,7 +138,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-func saveConfig(path string, c Config) error {
+func SaveConfig(path string, c Config) error {
 	if err := c.validate(); err != nil {
 		return err
 	}
@@ -189,7 +190,7 @@ func saveConfig(path string, c Config) error {
 	return os.Rename(f.Name(), path)
 }
 
-func expandPath(path string) (string, error) {
+func ExpandPath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("path cannot be empty")
 	}
@@ -211,8 +212,8 @@ func expandPath(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-func canonicalPath(path string) (string, error) {
-	path, err := expandPath(path)
+func CanonicalPath(path string) (string, error) {
+	path, err := ExpandPath(path)
 
 	if err != nil {
 		return "", err
@@ -241,7 +242,7 @@ func canonicalPath(path string) (string, error) {
 	return path, nil
 }
 
-func projects(c Config) ([]Project, error) {
+func Projects(c Config) ([]Project, error) {
 	result := []Project{}
 	seen := map[string]bool{}
 	names := make([]string, 0, len(c.Projects))
@@ -255,7 +256,7 @@ func projects(c Config) ([]Project, error) {
 	for _, name := range names {
 		p := c.Projects[name]
 		p.Name = name
-		path, err := canonicalPath(p.Path)
+		path, err := CanonicalPath(p.Path)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: project %s: %v\n", name, err)
@@ -272,7 +273,7 @@ func projects(c Config) ([]Project, error) {
 	}
 
 	for _, source := range c.Sources {
-		root, err := canonicalPath(source.Path)
+		root, err := CanonicalPath(source.Path)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: source %s: %v\n", source.Path, err)
@@ -287,7 +288,7 @@ func projects(c Config) ([]Project, error) {
 		}
 
 		for _, entry := range entries {
-			path, err := canonicalPath(filepath.Join(root, entry.Name()))
+			path, err := CanonicalPath(filepath.Join(root, entry.Name()))
 
 			if err != nil || seen[path] {
 				continue
@@ -314,21 +315,21 @@ func projects(c Config) ([]Project, error) {
 	return result, nil
 }
 
-func resolveProject(c Config, value string) (Project, error) {
+func ResolveProject(c Config, value string) (Project, error) {
 	if p, ok := c.Projects[value]; ok {
-		if _, err := canonicalPath(p.Path); err != nil {
+		if _, err := CanonicalPath(p.Path); err != nil {
 			return Project{}, fmt.Errorf("project %s: %w", value, err)
 		}
 	}
 
-	list, err := projects(c)
+	list, err := Projects(c)
 
 	if err != nil {
 		return Project{}, err
 	}
 
 	if value == "." || value == ".." || value == "~" || strings.ContainsRune(value, filepath.Separator) {
-		path, err := canonicalPath(value)
+		path, err := CanonicalPath(value)
 
 		if err != nil {
 			return Project{}, err

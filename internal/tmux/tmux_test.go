@@ -1,4 +1,4 @@
-package main
+package tmux
 
 import (
 	"errors"
@@ -7,27 +7,29 @@ import (
 	"reflect"
 	"regexp"
 	"testing"
+
+	"github.com/pr0sp3ro/dirhaven/internal/config"
 )
 
 func TestSessionIdentity(t *testing.T) {
-	first := sessionName("/one/my project")
+	first := SessionName("/one/my project")
 
 	if !regexp.MustCompile(`^my_project-[a-f0-9]{16}$`).MatchString(first) {
 		t.Fatalf("unexpected name: %s", first)
 	}
 
-	if first != sessionName("/one/my project") || first == sessionName("/two/my project") {
+	if first != SessionName("/one/my project") || first == SessionName("/two/my project") {
 		t.Fatal("session identity is not path-specific and stable")
 	}
 }
 
 func TestExistingSessionDoesNotInitializeAgain(t *testing.T) {
 	var calls [][]string
-	p := Project{Path: "/missing/project", Windows: []Window{{Name: "editor", Command: "nvim"}}}
+	p := config.Project{Path: "/missing/project", Windows: []config.Window{{Name: "editor", Command: "nvim"}}}
 	client := tmux{run: func(args ...string) (string, error) { calls = append(calls, args); return "", nil }}
 	name, err := client.ensure(p)
 
-	if err != nil || name != sessionName(p.Path) {
+	if err != nil || name != SessionName(p.Path) {
 		t.Fatalf("ensure: %s, %v", name, err)
 	}
 
@@ -68,7 +70,7 @@ func TestCreationFailureOnlyCleansUpOwnedSession(t *testing.T) {
 
 			}}
 
-			if _, err := client.ensure(Project{Path: t.TempDir()}); err == nil {
+			if _, err := client.ensure(config.Project{Path: t.TempDir()}); err == nil {
 				t.Fatal("expected failure")
 			}
 
@@ -121,7 +123,7 @@ func TestStartupRetainsFastCommandsAndSelectsFirstWindow(t *testing.T) {
 
 		return "", nil
 	}}
-	p := Project{Path: dir, Windows: []Window{
+	p := config.Project{Path: dir, Windows: []config.Window{
 		{Name: "output", Command: "printf done", Directory: "~cache"},
 		{Name: "shell"},
 	}}
@@ -161,7 +163,7 @@ func TestStartupRetainsFastCommandsAndSelectsFirstWindow(t *testing.T) {
 }
 
 func TestTmuxRejectsUnsafeWindowSettingsBeforeCreation(t *testing.T) {
-	for _, window := range []Window{
+	for _, window := range []config.Window{
 		{Name: "editor;"},
 		{Name: "editor[1]"},
 		{Name: "editor\nname"},
@@ -175,7 +177,7 @@ func TestTmuxRejectsUnsafeWindowSettingsBeforeCreation(t *testing.T) {
 			return "", errors.New("absent")
 		}}
 
-		if _, err := client.ensure(Project{Path: t.TempDir(), Windows: []Window{window}}); err == nil {
+		if _, err := client.ensure(config.Project{Path: t.TempDir(), Windows: []config.Window{window}}); err == nil {
 			t.Fatalf("accepted unsafe settings: %v", window)
 		}
 	}

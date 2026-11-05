@@ -1,4 +1,5 @@
-package main
+// Package tmux creates and opens project sessions in tmux.
+package tmux
 
 import (
 	"bytes"
@@ -8,9 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/pr0sp3ro/dirhaven/internal/config"
 )
 
-func sessionName(path string) string {
+func SessionName(path string) string {
 	var name strings.Builder
 
 	for _, b := range []byte(filepath.Base(path)) {
@@ -33,7 +36,7 @@ type tmux struct {
 	run func(...string) (string, error)
 }
 
-func newTmux() tmux {
+func NewTmux() tmux {
 	return tmux{run: func(args ...string) (string, error) {
 		cmd := exec.Command("tmux", args...)
 		var stderr bytes.Buffer
@@ -52,7 +55,7 @@ func newTmux() tmux {
 	}}
 }
 
-func (t tmux) sessions() (map[string]bool, error) {
+func (t tmux) Sessions() (map[string]bool, error) {
 	// Distinguish an absent server from other failures without hiding errors.
 	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").CombinedOutput()
 
@@ -75,12 +78,12 @@ func (t tmux) sessions() (map[string]bool, error) {
 	return result, nil
 }
 
-func (t tmux) ensure(p Project) (string, error) {
-	if _, err := expandPath(p.Path); err != nil {
+func (t tmux) ensure(p config.Project) (string, error) {
+	if _, err := config.ExpandPath(p.Path); err != nil {
 		return "", err
 	}
 
-	name := sessionName(p.Path)
+	name := SessionName(p.Path)
 
 	if _, err := t.run("has-session", "-t", "="+name); err == nil {
 		return name, nil
@@ -89,7 +92,7 @@ func (t tmux) ensure(p Project) (string, error) {
 	windows := p.Windows
 
 	if len(windows) == 0 {
-		windows = []Window{{Name: "terminal"}}
+		windows = []config.Window{{Name: "terminal"}}
 	}
 
 	dirs := make([]string, len(windows))
@@ -99,7 +102,7 @@ func (t tmux) ensure(p Project) (string, error) {
 			return "", fmt.Errorf("window settings contain a NUL character")
 		}
 
-		if strings.TrimSpace(w.Name) == "" || !validWindowName.MatchString(w.Name) {
+		if strings.TrimSpace(w.Name) == "" || !config.ValidWindowName.MatchString(w.Name) {
 			return "", fmt.Errorf("invalid window name %q: use ASCII letters, digits, spaces, _, - or .", w.Name)
 		}
 
@@ -111,7 +114,7 @@ func (t tmux) ensure(p Project) (string, error) {
 			dir = filepath.Join(p.Path, dir)
 		}
 
-		resolved, err := canonicalPath(dir)
+		resolved, err := config.CanonicalPath(dir)
 
 		if err != nil {
 			return "", fmt.Errorf("window %s: %w", w.Name, err)
@@ -204,12 +207,12 @@ func (t tmux) ensure(p Project) (string, error) {
 	return name, nil
 }
 
-func openProject(p Project) error {
+func OpenProject(p config.Project) error {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		return fmt.Errorf("tmux is required: %w", err)
 	}
 
-	name, err := newTmux().ensure(p)
+	name, err := NewTmux().ensure(p)
 
 	if err != nil {
 		return err

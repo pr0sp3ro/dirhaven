@@ -1,30 +1,32 @@
-package main
+package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pr0sp3ro/dirhaven/internal/config"
 )
 
 func TestCommandsRejectEmptyPathsWithoutChangingConfig(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
-	path, err := configPath()
+	path, err := config.ConfigPath()
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c := Config{
-		Sources:  []Source{{Path: root}},
-		Projects: map[string]Project{"demo": {Path: root}},
+	c := config.Config{
+		Sources:  []config.Source{{Path: root}},
+		Projects: map[string]config.Project{"demo": {Path: root}},
 	}
 
-	if err := saveConfig(path, c); err != nil {
+	if err := config.SaveConfig(path, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -42,7 +44,7 @@ func TestCommandsRejectEmptyPathsWithoutChangingConfig(t *testing.T) {
 			{"config", "set", "projects.demo.path", value},
 			{"config", "set", "sources.0.path", value},
 		} {
-			if err := run(args); err == nil {
+			if err := Run(args); err == nil {
 				t.Fatalf("accepted an empty path: %q", args)
 			}
 
@@ -60,7 +62,7 @@ func TestConfigEditRejectsDuplicateCanonicalPaths(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", root)
 	t.Setenv("VISUAL", `sh -c 'cat "$DIRHAVEN_TEST_EDIT_CONTENT" > "$1"' dirhaven-test`)
-	path, err := configPath()
+	path, err := config.ConfigPath()
 
 	if err != nil {
 		t.Fatal(err)
@@ -77,11 +79,11 @@ func TestConfigEditRejectsDuplicateCanonicalPaths(t *testing.T) {
 	t.Setenv("DIRHAVEN_TEST_EDIT_CONTENT", content)
 
 	for _, duplicate := range []string{projectPath, alias} {
-		if err := saveConfig(path, Config{}); err != nil {
+		if err := config.SaveConfig(path, config.Config{}); err != nil {
 			t.Fatal(err)
 		}
 
-		c := Config{Projects: map[string]Project{
+		c := config.Config{Projects: map[string]config.Project{
 			"alpha": {Path: projectPath},
 			"beta":  {Path: duplicate},
 		}}
@@ -95,15 +97,15 @@ func TestConfigEditRejectsDuplicateCanonicalPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := saveConfig(path, c); err == nil {
+		if err := config.SaveConfig(path, c); err == nil {
 			t.Fatal("save accepted duplicate canonical paths")
 		}
 
-		if err := run([]string{"config", "edit"}); err == nil {
+		if err := Run([]string{"config", "edit"}); err == nil {
 			t.Fatal("editor validation accepted duplicate canonical paths")
 		}
 
-		if _, err := loadConfig(path); err == nil {
+		if _, err := config.LoadConfig(path); err == nil {
 			t.Fatal("load accepted duplicate canonical paths")
 		}
 	}
@@ -120,18 +122,18 @@ func TestConfigSetRejectsDuplicateProjectPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path, err := configPath()
+	path, err := config.ConfigPath()
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c := Config{Projects: map[string]Project{
+	c := config.Config{Projects: map[string]config.Project{
 		"alpha": {Path: alphaPath},
 		"beta":  {Path: betaPath},
 	}}
 
-	if err := saveConfig(path, c); err != nil {
+	if err := config.SaveConfig(path, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -142,7 +144,7 @@ func TestConfigSetRejectsDuplicateProjectPaths(t *testing.T) {
 	}
 
 	for _, duplicate := range []string{alphaPath, alias} {
-		if err := run([]string{"config", "set", "projects.beta.path", duplicate}); err == nil {
+		if err := Run([]string{"config", "set", "projects.beta.path", duplicate}); err == nil {
 			t.Fatalf("accepted duplicate path: %s", duplicate)
 		}
 
@@ -153,17 +155,17 @@ func TestConfigSetRejectsDuplicateProjectPaths(t *testing.T) {
 		}
 	}
 
-	if err := run([]string{"config", "set", "projects.beta.path", betaPath}); err != nil {
+	if err := Run([]string{"config", "set", "projects.beta.path", betaPath}); err != nil {
 		t.Fatalf("rejected project's own path: %v", err)
 	}
 
 	newPath := t.TempDir()
 
-	if err := run([]string{"config", "set", "projects.beta.path", newPath}); err != nil {
+	if err := Run([]string{"config", "set", "projects.beta.path", newPath}); err != nil {
 		t.Fatalf("rejected unique path: %v", err)
 	}
 
-	loaded, err := loadConfig(path)
+	loaded, err := config.LoadConfig(path)
 
 	if err != nil || loaded.Projects["beta"].Path != newPath {
 		t.Fatalf("unique path was not saved: %v, %v", loaded, err)
@@ -175,7 +177,7 @@ func TestConfigEditCanRepairInvalidConfiguration(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("VISUAL", `sh -c 'printf "sources = []\n" > "$1"' dirhaven-test`)
 
-	path, err := configPath()
+	path, err := config.ConfigPath()
 
 	if err != nil {
 		t.Fatal(err)
@@ -189,17 +191,17 @@ func TestConfigEditCanRepairInvalidConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := run([]string{"config", "edit"}); err != nil {
+	if err := Run([]string{"config", "edit"}); err != nil {
 		t.Fatalf("could not repair configuration: %v", err)
 	}
 
-	if _, err := loadConfig(path); err != nil {
+	if _, err := config.LoadConfig(path); err != nil {
 		t.Fatalf("configuration was not repaired: %v", err)
 	}
 
 	t.Setenv("VISUAL", `sh -c 'printf "invalid = [" > "$1"' dirhaven-test`)
 
-	if err := run([]string{"config", "edit"}); err == nil {
+	if err := Run([]string{"config", "edit"}); err == nil {
 		t.Fatal("invalid configuration was accepted after editing")
 	}
 }
@@ -212,16 +214,16 @@ func TestConfigEditPreservesSymlinkWithReplacingEditor(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", root)
 			t.Setenv("VISUAL", `sh -c 'printf "sources = []\n" > "$1.new" && mv "$1.new" "$1"' dirhaven-test`)
 
-			path, err := configPath()
+			path, err := config.ConfigPath()
 
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			target := filepath.Join(root, "target.toml")
-			c := Config{Projects: map[string]Project{"demo": {Path: root}}}
+			c := config.Config{Projects: map[string]config.Project{"demo": {Path: root}}}
 
-			if err := saveConfig(target, c); err != nil {
+			if err := config.SaveConfig(target, c); err != nil {
 				t.Fatal(err)
 			}
 
@@ -235,7 +237,7 @@ func TestConfigEditPreservesSymlinkWithReplacingEditor(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := run(args); err != nil {
+			if err := Run(args); err != nil {
 				t.Fatal(err)
 			}
 
@@ -251,5 +253,68 @@ func TestConfigEditPreservesSymlinkWithReplacingEditor(t *testing.T) {
 				t.Fatalf("editor did not update the target: %q, %v", data, err)
 			}
 		})
+	}
+}
+
+func TestConcurrentConfigUpdatesPreserveSettings(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const count = 8
+	paths := make([]string, count)
+	start := make(chan struct{})
+	errors := make(chan error, count)
+
+	for i := range paths {
+		paths[i] = t.TempDir()
+
+		go func(i int) {
+			<-start
+			errors <- Run([]string{"project", "add", fmt.Sprintf("project_%d", i), paths[i]})
+		}(i)
+	}
+
+	close(start)
+
+	for range paths {
+		if err := <-errors; err != nil {
+			t.Error(err)
+		}
+	}
+
+	path, err := config.ConfigPath()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := config.LoadConfig(path)
+
+	if err != nil || len(c.Projects) != count {
+		t.Fatalf("concurrent writes lost projects: %v, %v", c, err)
+	}
+
+	// An even number of concurrent toggles must leave the favorite disabled.
+	start = make(chan struct{})
+
+	for range paths {
+		go func() {
+			<-start
+			_, err := config.ToggleFavorite(path, paths[0])
+			errors <- err
+		}()
+	}
+
+	close(start)
+
+	for range paths {
+		if err := <-errors; err != nil {
+			t.Error(err)
+		}
+	}
+
+	c, err = config.LoadConfig(path)
+
+	if err != nil || len(c.Projects) != count || c.Projects["project_0"].Favorite {
+		t.Fatalf("concurrent toggles lost settings: %v, %v", c, err)
 	}
 }

@@ -14,7 +14,7 @@ Dirhaven discovers projects from directories you choose. Projects can also be re
 ## Installation
 
 ```sh
-go build -o dirhaven .
+go build -o dirhaven ./cmd/dirhaven
 mkdir -p ~/.local/bin
 install -m 755 dirhaven ~/.local/bin/dirhaven
 ```
@@ -24,7 +24,7 @@ Make sure `~/.local/bin` is on your `PATH`.
 Optionally, use the Bash installer from the repository directory:
 
 ```sh
-./install
+./scripts/install
 ```
 
 It builds and installs Dirhaven in `~/.local/bin` and creates an empty configuration at `$XDG_CONFIG_HOME/dirhaven/config.toml`, or `~/.config/dirhaven/config.toml` by default. Missing configuration directories are created automatically. Existing configuration is preserved when the installer is run again.
@@ -32,7 +32,7 @@ It builds and installs Dirhaven in `~/.local/bin` and creates an empty configura
 Alternatively, install directly with Go:
 
 ```sh
-go install github.com/pr0sp3ro/dirhaven@latest
+go install github.com/pr0sp3ro/dirhaven/cmd/dirhaven@latest
 ```
 
 Go installs the executable in `$GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. That directory must be on your `PATH`.
@@ -109,7 +109,7 @@ Dirhaven supplies its own fzf options and ignores `FZF_DEFAULT_OPTS` and `FZF_DE
 
 The configuration file is `$XDG_CONFIG_HOME/dirhaven/config.toml`, or `~/.config/dirhaven/config.toml` by default. Use an absolute path for `XDG_CONFIG_HOME`.
 
-Reading a missing configuration does not create a file. The optional `./install` script or the first configuration-changing command creates it. With no projects available, Dirhaven prints instructions for adding a source or project.
+Reading a missing configuration does not create a file. The optional `./scripts/install` script or the first configuration-changing command creates it. With no projects available, Dirhaven prints instructions for adding a source or project.
 
 ```toml
 [[sources]]

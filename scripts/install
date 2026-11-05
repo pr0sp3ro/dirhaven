@@ -3,13 +3,13 @@
 set -euo pipefail
 
 if [[ ${1:-} == -h || ${1:-} == --help ]]; then
-    echo 'Usage: ./install'
+    echo 'Usage: ./scripts/install'
     echo 'Build and install Dirhaven in ~/.local/bin and create missing configuration.'
     exit 0
 fi
 
 if [[ $# -ne 0 ]]; then
-    echo 'Usage: ./install' >&2
+    echo 'Usage: ./scripts/install' >&2
     exit 1
 fi
 
@@ -20,7 +20,7 @@ if [[ $config_home != /* ]]; then
     exit 1
 fi
 
-project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 bin_dir="$HOME/.local/bin"
 config_dir="$config_home/dirhaven"
 config_file="$config_dir/config.toml"
@@ -29,7 +29,7 @@ build_dir=$(mktemp -d)
 trap 'rm -rf -- "$build_dir"' EXIT
 
 cd -- "$project_dir"
-go build -o "$build_dir/dirhaven" .
+go build -o "$build_dir/dirhaven" ./cmd/dirhaven
 
 mkdir -p -- "$bin_dir"
 install -m 755 -- "$build_dir/dirhaven" "$bin_dir/dirhaven"

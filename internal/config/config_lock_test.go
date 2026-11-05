@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -9,76 +9,13 @@ import (
 	"time"
 )
 
-func TestConcurrentConfigUpdatesPreserveSettings(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	const count = 8
-	paths := make([]string, count)
-	start := make(chan struct{})
-	errors := make(chan error, count)
-
-	for i := range paths {
-		paths[i] = t.TempDir()
-
-		go func(i int) {
-			<-start
-			errors <- run([]string{"project", "add", fmt.Sprintf("project_%d", i), paths[i]})
-		}(i)
-	}
-
-	close(start)
-
-	for range paths {
-		if err := <-errors; err != nil {
-			t.Error(err)
-		}
-	}
-
-	path, err := configPath()
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := loadConfig(path)
-
-	if err != nil || len(c.Projects) != count {
-		t.Fatalf("concurrent writes lost projects: %v, %v", c, err)
-	}
-
-	// An even number of concurrent toggles must leave the favorite disabled.
-	start = make(chan struct{})
-
-	for range paths {
-		go func() {
-			<-start
-			_, err := toggleFavorite(path, paths[0])
-			errors <- err
-		}()
-	}
-
-	close(start)
-
-	for range paths {
-		if err := <-errors; err != nil {
-			t.Error(err)
-		}
-	}
-
-	c, err = loadConfig(path)
-
-	if err != nil || len(c.Projects) != count || c.Projects["project_0"].Favorite {
-		t.Fatalf("concurrent toggles lost settings: %v, %v", c, err)
-	}
-}
-
 func TestConfigLockUsesSymlinkTargetAndSurvivesReplacement(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
 	target := filepath.Join(root, "target.toml")
 	link := filepath.Join(root, "config.toml")
 
-	if err := saveConfig(target, Config{}); err != nil {
+	if err := SaveConfig(target, Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -86,7 +23,7 @@ func TestConfigLockUsesSymlinkTargetAndSurvivesReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	lock, err := lockConfig(link, syscall.LOCK_EX)
+	lock, err := LockConfig(link, syscall.LOCK_EX)
 
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +31,7 @@ func TestConfigLockUsesSymlinkTargetAndSurvivesReplacement(t *testing.T) {
 
 	defer lock.Close()
 
-	if err := saveConfig(link, Config{Sources: []Source{{Path: root}}}); err != nil {
+	if err := SaveConfig(link, Config{Sources: []Source{{Path: root}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -129,11 +66,11 @@ func TestConfigReadWaitsForEditorLock(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "config.toml")
 
-	if err := saveConfig(path, Config{}); err != nil {
+	if err := SaveConfig(path, Config{}); err != nil {
 		t.Fatal(err)
 	}
 
-	lock, err := lockConfig(path, syscall.LOCK_EX)
+	lock, err := LockConfig(path, syscall.LOCK_EX)
 
 	if err != nil {
 		t.Fatal(err)
@@ -150,7 +87,7 @@ func TestConfigReadWaitsForEditorLock(t *testing.T) {
 
 	go func() {
 		close(started)
-		c, err := readConfig(path)
+		c, err := ReadConfig(path)
 
 		if err == nil && len(c.Sources) != 1 {
 			err = fmt.Errorf("reader did not receive the completed configuration: %v", c)
@@ -167,7 +104,7 @@ func TestConfigReadWaitsForEditorLock(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	if err := saveConfig(path, Config{Sources: []Source{{Path: t.TempDir()}}}); err != nil {
+	if err := SaveConfig(path, Config{Sources: []Source{{Path: t.TempDir()}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,7 +126,7 @@ func TestConfigReadDoesNotCreateMissingConfiguration(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	root := t.TempDir()
 	path := filepath.Join(root, "dirhaven", "config.toml")
-	c, err := readConfig(path)
+	c, err := ReadConfig(path)
 
 	if err != nil || len(c.Projects) != 0 {
 		t.Fatalf("missing config: %v, %v", c, err)
@@ -206,7 +143,7 @@ func TestConfigReadFromReadOnlyDirectory(t *testing.T) {
 	target := filepath.Join(root, "config.toml")
 	c := Config{Sources: []Source{{Path: root}}}
 
-	if err := saveConfig(target, c); err != nil {
+	if err := SaveConfig(target, c); err != nil {
 		t.Fatal(err)
 	}
 
@@ -227,7 +164,7 @@ func TestConfigReadFromReadOnlyDirectory(t *testing.T) {
 	})
 
 	for _, path := range []string{target, alias} {
-		loaded, err := readConfig(path)
+		loaded, err := ReadConfig(path)
 
 		if err != nil || len(loaded.Sources) != 1 || loaded.Sources[0].Path != root {
 			t.Fatalf("could not read configuration from a read-only directory: %v, %v", loaded, err)
@@ -257,7 +194,7 @@ func TestConfigLockIdentityBeforeAndAfterCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := saveConfig(path, Config{}); err != nil {
+	if err := SaveConfig(path, Config{}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -8,13 +8,13 @@ import (
 )
 
 func TestResolveProjectAcceptsParentDirectory(t *testing.T) {
-	want, err := canonicalPath("..")
+	want, err := CanonicalPath("..")
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p, err := resolveProject(Config{}, "..")
+	p, err := ResolveProject(Config{}, "..")
 
 	if err != nil || p.Path != want {
 		t.Fatalf("parent directory was not resolved: %v, %v", p, err)
@@ -23,7 +23,7 @@ func TestResolveProjectAcceptsParentDirectory(t *testing.T) {
 
 func TestConfigRoundTripAndInvalidInput(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "dirhaven", "config.toml")
-	c, err := loadConfig(path)
+	c, err := LoadConfig(path)
 
 	if err != nil || len(c.Projects) != 0 {
 		t.Fatalf("missing config: %v, %v", c, err)
@@ -35,11 +35,11 @@ func TestConfigRoundTripAndInvalidInput(t *testing.T) {
 
 	c.Projects["demo"] = Project{Path: t.TempDir(), Favorite: true, Windows: []Window{{Name: "editor", Command: "nvim"}, {Name: "shell"}}}
 
-	if err := saveConfig(path, c); err != nil {
+	if err := SaveConfig(path, c); err != nil {
 		t.Fatal(err)
 	}
 
-	loaded, err := loadConfig(path)
+	loaded, err := LoadConfig(path)
 
 	if err != nil || !reflect.DeepEqual(loaded.Projects, c.Projects) {
 		t.Fatalf("round trip: %v, %v", loaded, err)
@@ -55,7 +55,7 @@ func TestConfigRoundTripAndInvalidInput(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := loadConfig(path); err == nil {
+		if _, err := LoadConfig(path); err == nil {
 			t.Fatalf("accepted invalid input %q", input)
 		}
 
@@ -102,7 +102,7 @@ func TestSaveConfigPreservesSymlink(t *testing.T) {
 
 			c := Config{Sources: []Source{{Path: root}}}
 
-			if err := saveConfig(link, c); err != nil {
+			if err := SaveConfig(link, c); err != nil {
 				t.Fatal(err)
 			}
 
@@ -112,7 +112,7 @@ func TestSaveConfigPreservesSymlink(t *testing.T) {
 				t.Fatalf("symlink changed: %q, %v", actualTarget, err)
 			}
 
-			loaded, err := loadConfig(target)
+			loaded, err := LoadConfig(target)
 
 			if err != nil || !reflect.DeepEqual(loaded.Sources, c.Sources) {
 				t.Fatalf("target not updated: %v, %v", loaded, err)
@@ -130,7 +130,7 @@ func TestSaveConfigRejectsDanglingSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := saveConfig(link, Config{}); err == nil {
+	if err := SaveConfig(link, Config{}); err == nil {
 		t.Fatal("accepted a dangling configuration symlink")
 	}
 
@@ -165,7 +165,7 @@ func TestDiscoveryDeduplicatesSymlinksAndKeepsExplicitSettings(t *testing.T) {
 			},
 		},
 	}
-	list, err := projects(c)
+	list, err := Projects(c)
 
 	if err != nil || len(list) != 1 {
 		t.Fatalf("discovery: %v, %v", list, err)
@@ -177,7 +177,7 @@ func TestDiscoveryDeduplicatesSymlinksAndKeepsExplicitSettings(t *testing.T) {
 		t.Fatalf("lost explicit settings: %v", p)
 	}
 
-	if err := favorite(&c, p, false); err != nil {
+	if err := Favorite(&c, p, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,11 +189,11 @@ func TestDiscoveryDeduplicatesSymlinksAndKeepsExplicitSettings(t *testing.T) {
 func TestSettingsValidateTypesAndPreserveWindowsOnFailure(t *testing.T) {
 	c := Config{Projects: map[string]Project{"demo": {Path: t.TempDir()}}}
 
-	if err := setConfigValue(&c, "projects.demo.windows", `[{name="editor", command="nvim"}, {name="shell"}]`); err != nil {
+	if err := SetConfigValue(&c, "projects.demo.windows", `[{name="editor", command="nvim"}, {name="shell"}]`); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := setConfigValue(&c, "projects.demo.windows.0.name", ""); err == nil {
+	if err := SetConfigValue(&c, "projects.demo.windows.0.name", ""); err == nil {
 		t.Fatal("accepted empty name")
 	}
 
@@ -201,15 +201,15 @@ func TestSettingsValidateTypesAndPreserveWindowsOnFailure(t *testing.T) {
 		t.Fatal("failed update mutated windows")
 	}
 
-	if err := setConfigValue(&c, "projects.demo.favorite", "maybe"); err == nil {
+	if err := SetConfigValue(&c, "projects.demo.favorite", "maybe"); err == nil {
 		t.Fatal("accepted invalid bool")
 	}
 
-	if value, err := configValue(c, "projects.demo.favorite"); err != nil || value != false {
+	if value, err := ConfigValue(c, "projects.demo.favorite"); err != nil || value != false {
 		t.Fatalf("default bool: %v, %v", value, err)
 	}
 
-	if value, err := configValue(c, "projects.demo.windows.1.command"); err != nil || value != "" {
+	if value, err := ConfigValue(c, "projects.demo.windows.1.command"); err != nil || value != "" {
 		t.Fatalf("default command: %v, %v", value, err)
 	}
 }
@@ -225,23 +225,23 @@ func TestFavoriteNormalizesDiscoveredNamesWithoutOverwritingProjects(t *testing.
 			}
 
 			c := Config{Sources: []Source{{Path: root}}, Projects: map[string]Project{}}
-			list, err := projects(c)
+			list, err := Projects(c)
 
 			if err != nil || len(list) != 1 {
 				t.Fatalf("discovery: %v, %v", list, err)
 			}
 
-			if err := favorite(&c, list[0], true); err != nil {
+			if err := Favorite(&c, list[0], true); err != nil {
 				t.Fatal(err)
 			}
 
 			configFile := filepath.Join(t.TempDir(), "config.toml")
 
-			if err := saveConfig(configFile, c); err != nil {
+			if err := SaveConfig(configFile, c); err != nil {
 				t.Fatal(err)
 			}
 
-			loaded, err := loadConfig(configFile)
+			loaded, err := LoadConfig(configFile)
 
 			if err != nil {
 				t.Fatal(err)
@@ -256,7 +256,7 @@ func TestFavoriteNormalizesDiscoveredNamesWithoutOverwritingProjects(t *testing.
 			other := Project{Path: t.TempDir()}
 			loaded.Projects["example_app"] = other
 
-			if err := favorite(&loaded, list[0], true); err == nil {
+			if err := Favorite(&loaded, list[0], true); err == nil {
 				t.Fatal("accepted a conflicting identifier")
 			}
 
@@ -301,7 +301,7 @@ func TestUnreadableSourceDoesNotBlockOtherProjects(t *testing.T) {
 			"configured": {Path: configured},
 		},
 	}
-	list, err := projects(c)
+	list, err := Projects(c)
 
 	if err != nil || len(list) != 2 {
 		t.Fatalf("unreadable source blocked discovery: %v, %v", list, err)
@@ -312,7 +312,7 @@ func TestUnreadableSourceDoesNotBlockOtherProjects(t *testing.T) {
 		{"discovered", discovered},
 		{direct, direct},
 	} {
-		p, err := resolveProject(c, selection.value)
+		p, err := ResolveProject(c, selection.value)
 
 		if err != nil || p.Path != selection.path {
 			t.Fatalf("unreadable source blocked %q: %v, %v", selection.value, p, err)
@@ -365,7 +365,7 @@ func TestCanonicalPathRejectsUnsupportedSymlinkTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := canonicalPath(alias); err == nil {
+	if _, err := CanonicalPath(alias); err == nil {
 		t.Fatal("accepted a symlink target with unsupported characters")
 	}
 }

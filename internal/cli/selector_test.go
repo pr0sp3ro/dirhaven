@@ -1,10 +1,12 @@
-package main
+package cli
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pr0sp3ro/dirhaven/internal/config"
 )
 
 func TestPickerReloadsSettingsBeforeOpening(t *testing.T) {
@@ -13,18 +15,18 @@ func TestPickerReloadsSettingsBeforeOpening(t *testing.T) {
 	configFile := filepath.Join(root, "config.toml")
 	updatedFile := filepath.Join(root, "updated.toml")
 	argsFile := filepath.Join(root, "tmux-args")
-	initial := Config{Projects: map[string]Project{
-		"demo": {Path: root, Windows: []Window{{Name: "old", Command: "printf old"}}},
+	initial := config.Config{Projects: map[string]config.Project{
+		"demo": {Path: root, Windows: []config.Window{{Name: "old", Command: "printf old"}}},
 	}}
-	updated := Config{Projects: map[string]Project{
-		"renamed": {Path: root, Windows: []Window{{Name: "new", Command: "printf latest"}}},
+	updated := config.Config{Projects: map[string]config.Project{
+		"renamed": {Path: root, Windows: []config.Window{{Name: "new", Command: "printf latest"}}},
 	}}
 
-	if err := saveConfig(configFile, initial); err != nil {
+	if err := config.SaveConfig(configFile, initial); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := saveConfig(updatedFile, updated); err != nil {
+	if err := config.SaveConfig(updatedFile, updated); err != nil {
 		t.Fatal(err)
 	}
 

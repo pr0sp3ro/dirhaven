@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -8,13 +8,16 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/pr0sp3ro/dirhaven/internal/config"
+	"github.com/pr0sp3ro/dirhaven/internal/tmux"
 )
 
-func selectProject(path string, c Config) error {
+func selectProject(path string, c config.Config) error {
 	query := ""
 
 	for {
-		list, err := projects(c)
+		list, err := config.Projects(c)
 
 		if err != nil {
 			return err
@@ -31,7 +34,7 @@ func selectProject(path string, c Config) error {
 			}
 		}
 
-		sessions, err := newTmux().sessions()
+		sessions, err := tmux.NewTmux().Sessions()
 
 		if err != nil {
 			return err
@@ -46,7 +49,7 @@ func selectProject(path string, c Config) error {
 				star = "*"
 			}
 
-			if sessions[sessionName(p.Path)] {
+			if sessions[tmux.SessionName(p.Path)] {
 				active = "+"
 			}
 
@@ -103,7 +106,7 @@ func selectProject(path string, c Config) error {
 		p := list[id]
 
 		if key == "ctrl-f" {
-			c, err = toggleFavorite(path, p.Path)
+			c, err = config.ToggleFavorite(path, p.Path)
 
 			if err != nil {
 				return err
@@ -113,19 +116,19 @@ func selectProject(path string, c Config) error {
 		}
 
 		// Reload before opening to use edits made while fzf ran.
-		c, err = readConfig(path)
+		c, err = config.ReadConfig(path)
 
 		if err != nil {
 			return err
 		}
 
-		p, err = resolveProject(c, p.Path)
+		p, err = config.ResolveProject(c, p.Path)
 
 		if err != nil {
 			return err
 		}
 
-		return openProject(p)
+		return tmux.OpenProject(p)
 	}
 }
 

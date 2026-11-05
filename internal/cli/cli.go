@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"syscall"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pr0sp3ro/dirhaven/internal/config"
+	"github.com/pr0sp3ro/dirhaven/internal/tmux"
 )
 
 var version = "dev"
@@ -31,14 +33,7 @@ Selector: Enter opens, Ctrl-F toggles favorite, Esc cancels.
 Config: $XDG_CONFIG_HOME/dirhaven/config.toml (default ~/.config/dirhaven/config.toml).
 `
 
-func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "dirhaven:", err)
-		os.Exit(1)
-	}
-}
-
-func run(args []string) error {
+func Run(args []string) error {
 	if len(args) == 1 {
 		switch args[0] {
 		case "-h", "--help":
@@ -51,7 +46,7 @@ func run(args []string) error {
 		}
 	}
 
-	path, err := configPath()
+	path, err := config.ConfigPath()
 
 	if err != nil {
 		return err
@@ -72,7 +67,7 @@ func run(args []string) error {
 		}
 
 		if writesConfig {
-			lock, err := lockConfig(path, syscall.LOCK_EX)
+			lock, err := config.LockConfig(path, syscall.LOCK_EX)
 
 			if err != nil {
 				return err
@@ -87,15 +82,15 @@ func run(args []string) error {
 			return fmt.Errorf("usage: dirhaven config edit")
 		}
 
-		return editConfig(path, Config{})
+		return config.EditConfig(path, config.Config{})
 	}
 
-	var c Config
+	var c config.Config
 
 	if writesConfig {
-		c, err = loadConfig(path)
+		c, err = config.LoadConfig(path)
 	} else {
-		c, err = readConfig(path)
+		c, err = config.ReadConfig(path)
 	}
 
 	if err != nil {
@@ -112,20 +107,20 @@ func run(args []string) error {
 			return fmt.Errorf("usage: dirhaven open <name|path>")
 		}
 
-		p, err := resolveProject(c, args[1])
+		p, err := config.ResolveProject(c, args[1])
 
 		if err != nil {
 			return err
 		}
 
-		return openProject(p)
+		return tmux.OpenProject(p)
 
 	case "list":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: dirhaven list")
 		}
 
-		list, err := projects(c)
+		list, err := config.Projects(c)
 
 		if err != nil {
 			return err
@@ -153,18 +148,18 @@ func run(args []string) error {
 			return fmt.Errorf("usage: dirhaven source add|remove <path>")
 		}
 
-		target, err := expandPath(args[2])
+		target, err := config.ExpandPath(args[2])
 
 		if err != nil {
 			return err
 		}
 
-		if resolved, resolveErr := canonicalPath(args[2]); resolveErr == nil {
+		if resolved, resolveErr := config.CanonicalPath(args[2]); resolveErr == nil {
 			target = resolved
 		}
 
 		if args[1] == "add" {
-			target, err = canonicalPath(args[2])
+			target, err = config.CanonicalPath(args[2])
 
 			if err != nil {
 				return err
@@ -172,13 +167,13 @@ func run(args []string) error {
 		}
 
 		found := false
-		sources := make([]Source, 0, len(c.Sources))
+		sources := make([]config.Source, 0, len(c.Sources))
 
 		for _, s := range c.Sources {
-			resolved, err := canonicalPath(s.Path)
+			resolved, err := config.CanonicalPath(s.Path)
 
 			if err != nil {
-				resolved, err = expandPath(s.Path)
+				resolved, err = config.ExpandPath(s.Path)
 
 				if err != nil {
 					return err
@@ -197,7 +192,7 @@ func run(args []string) error {
 		}
 
 		if args[1] == "add" && !found {
-			sources = append(sources, Source{Path: target})
+			sources = append(sources, config.Source{Path: target})
 		}
 
 		if args[1] == "remove" && !found {
@@ -205,7 +200,7 @@ func run(args []string) error {
 		}
 
 		c.Sources = sources
-		return saveConfig(path, c)
+		return config.SaveConfig(path, c)
 
 	case "project":
 		if len(args) < 3 {
@@ -220,7 +215,7 @@ func run(args []string) error {
 				return fmt.Errorf("usage: dirhaven project add <name> <path>")
 			}
 
-			if !validName.MatchString(name) {
+			if !config.ValidName.MatchString(name) {
 				return fmt.Errorf("invalid project name: use letters, numbers, underscores or hyphens")
 			}
 
@@ -228,14 +223,14 @@ func run(args []string) error {
 				return fmt.Errorf("project %q already configured", name)
 			}
 
-			target, err := canonicalPath(args[3])
+			target, err := config.CanonicalPath(args[3])
 
 			if err != nil {
 				return err
 			}
 
-			c.Projects[name] = Project{Path: target}
-			return saveConfig(path, c)
+			c.Projects[name] = config.Project{Path: target}
+			return config.SaveConfig(path, c)
 
 		case "show", "edit":
 			if len(args) != 3 {
@@ -253,7 +248,7 @@ func run(args []string) error {
 			}
 
 			fmt.Fprintf(os.Stderr, "Editing %s, section [projects.%s]\n", path, name)
-			return editConfig(path, c)
+			return config.EditConfig(path, c)
 		}
 
 	case "favorite":
@@ -265,24 +260,24 @@ func run(args []string) error {
 		p, ok := c.Projects[args[2]]
 
 		if ok && args[1] == "remove" {
-			if _, pathErr := canonicalPath(p.Path); pathErr != nil {
+			if _, pathErr := config.CanonicalPath(p.Path); pathErr != nil {
 				p.Favorite = false
 				c.Projects[args[2]] = p
-				return saveConfig(path, c)
+				return config.SaveConfig(path, c)
 			}
 		}
 
-		p, err = resolveProject(c, args[2])
+		p, err = config.ResolveProject(c, args[2])
 
 		if err != nil {
 			return err
 		}
 
-		if err = favorite(&c, p, args[1] == "add"); err != nil {
+		if err = config.Favorite(&c, p, args[1] == "add"); err != nil {
 			return err
 		}
 
-		return saveConfig(path, c)
+		return config.SaveConfig(path, c)
 
 	case "config":
 		if len(args) < 2 {
@@ -299,7 +294,7 @@ func run(args []string) error {
 				return fmt.Errorf("usage: dirhaven config get [key]")
 			}
 
-			value, err := configValue(c, args[2])
+			value, err := config.ConfigValue(c, args[2])
 
 			if err != nil {
 				return err
@@ -323,11 +318,11 @@ func run(args []string) error {
 				return fmt.Errorf("usage: dirhaven config set <key> <value>")
 			}
 
-			if err = setConfigValue(&c, args[2], args[3]); err != nil {
+			if err = config.SetConfigValue(&c, args[2], args[3]); err != nil {
 				return err
 			}
 
-			return saveConfig(path, c)
+			return config.SaveConfig(path, c)
 
 		}
 	}
