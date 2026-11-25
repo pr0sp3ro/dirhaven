@@ -13,10 +13,17 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+type Pane struct {
+	Command   string `toml:"command,omitempty"`
+	Directory string `toml:"directory,omitempty"`
+}
+
 type Window struct {
 	Name      string `toml:"name"`
 	Command   string `toml:"command,omitempty"`
 	Directory string `toml:"directory,omitempty"`
+	Layout    string `toml:"layout,omitempty"`
+	Panes     []Pane `toml:"panes,omitempty"`
 }
 
 type Project struct {
@@ -38,6 +45,22 @@ type Config struct {
 var ValidName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var ValidWindowName = regexp.MustCompile(`^[A-Za-z0-9 _.-]+$`)
 var validPath = regexp.MustCompile(`^[A-Za-z0-9 _./~-]+$`)
+
+// Only named layouts are accepted, because custom layout strings depend on the
+// window size, the pane count and the tmux version. Mirrored layouts need tmux 3.5.
+var layouts = map[string]bool{
+	"even-horizontal":          true,
+	"even-vertical":            true,
+	"main-horizontal":          true,
+	"main-horizontal-mirrored": true,
+	"main-vertical":            true,
+	"main-vertical-mirrored":   true,
+	"tiled":                    true,
+}
+
+func ValidLayout(layout string) bool {
+	return layouts[layout]
+}
 
 func ConfigPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
@@ -130,6 +153,26 @@ func (c Config) validate() error {
 			if w.Directory != "" {
 				if _, err := ExpandPath(w.Directory); err != nil {
 					return fmt.Errorf("project %s, window %s: %w", name, w.Name, err)
+				}
+			}
+
+			if w.Layout != "" && !ValidLayout(w.Layout) {
+				return fmt.Errorf("project %s, window %s: unknown layout %q", name, w.Name, w.Layout)
+			}
+
+			if len(w.Panes) > 0 && w.Command != "" {
+				return fmt.Errorf("project %s, window %s: set commands in panes when panes are configured", name, w.Name)
+			}
+
+			for _, pane := range w.Panes {
+				if strings.ContainsRune(pane.Command+pane.Directory, 0) {
+					return fmt.Errorf("project %s has a NUL character in its pane settings", name)
+				}
+
+				if pane.Directory != "" {
+					if _, err := ExpandPath(pane.Directory); err != nil {
+						return fmt.Errorf("project %s, window %s, pane: %w", name, w.Name, err)
+					}
 				}
 			}
 		}

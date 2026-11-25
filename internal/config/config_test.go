@@ -67,6 +67,43 @@ func TestConfigRoundTripAndInvalidInput(t *testing.T) {
 	}
 }
 
+func TestPanesAndLayoutSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	c := Config{Projects: map[string]Project{"demo": {Path: t.TempDir(), Windows: []Window{{Name: "dev"}}}}}
+
+	if err := SetConfigValue(&c, "projects.demo.windows.0.panes", `[{command="nvim"}, {directory="src"}]`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := SetConfigValue(&c, "projects.demo.windows.0.layout", "main-vertical"); err != nil {
+		t.Fatal(err)
+	}
+
+	for key, value := range map[string]string{
+		"projects.demo.windows.0.layout":  "main-vertial",
+		"projects.demo.windows.0.command": "nvim",
+		"projects.demo.windows.0.panes":   `[{directory="bad;"}]`,
+	} {
+		if err := SetConfigValue(&c, key, value); err == nil {
+			t.Fatalf("accepted %s = %s", key, value)
+		}
+	}
+
+	if value, err := ConfigValue(c, "projects.demo.windows.0.panes.1.directory"); err != nil || value != "src" {
+		t.Fatalf("pane directory: %v, %v", value, err)
+	}
+
+	if err := SaveConfig(path, c); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadConfig(path)
+
+	if err != nil || !reflect.DeepEqual(loaded.Projects, c.Projects) {
+		t.Fatalf("round trip: %v, %v", loaded, err)
+	}
+}
+
 func TestSaveConfigPreservesSymlink(t *testing.T) {
 	for _, relative := range []bool{false, true} {
 		name := "absolute target"

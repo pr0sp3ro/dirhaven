@@ -95,7 +95,8 @@ func (t tmux) ensure(p config.Project) (string, error) {
 		windows = []config.Window{{Name: "terminal"}}
 	}
 
-	dirs := make([]string, len(windows))
+	// One directory per pane, in the order of windowPanes.
+	dirs := make([][]string, len(windows))
 
 	for i, w := range windows {
 		if strings.ContainsRune(w.Name+w.Command+w.Directory, 0) {
@@ -106,21 +107,30 @@ func (t tmux) ensure(p config.Project) (string, error) {
 			return "", fmt.Errorf("invalid window name %q: use ASCII letters, digits, spaces, _, - or .", w.Name)
 		}
 
-		dir := w.Directory
-
-		if dir == "" {
-			dir = p.Path
-		} else if !filepath.IsAbs(dir) && dir != "~" && !strings.HasPrefix(dir, "~/") {
-			dir = filepath.Join(p.Path, dir)
+		if w.Layout != "" && !config.ValidLayout(w.Layout) {
+			return "", fmt.Errorf("window %s: unknown layout %q", w.Name, w.Layout)
 		}
 
-		resolved, err := config.CanonicalPath(dir)
+		// Expand "~" first, so pane directories with ".." climb from the real path.
+		windowDir, err := config.ExpandPath(joinDirectory(p.Path, w.Directory))
 
 		if err != nil {
 			return "", fmt.Errorf("window %s: %w", w.Name, err)
 		}
 
-		dirs[i] = resolved
+		for _, pane := range windowPanes(w) {
+			if strings.ContainsRune(pane.Command+pane.Directory, 0) {
+				return "", fmt.Errorf("pane settings contain a NUL character")
+			}
+
+			resolved, err := config.CanonicalPath(joinDirectory(windowDir, pane.Directory))
+
+			if err != nil {
+				return "", fmt.Errorf("window %s: %w", w.Name, err)
+			}
+
+			dirs[i] = append(dirs[i], resolved)
+		}
 	}
 
 	// Start a placeholder first so remain-on-exit is set before a fast command finishes.
@@ -129,7 +139,7 @@ func (t tmux) ensure(p config.Project) (string, error) {
 		"-F", "#{session_id} #{window_id}",
 		"-s", name,
 		"-n", windows[0].Name,
-		"-c", dirs[0],
+		"-c", dirs[0][0],
 		"sleep 2147483647",
 	)
 
@@ -163,6 +173,18 @@ func (t tmux) ensure(p config.Project) (string, error) {
 		return cleanup(err)
 	}
 
+	startCommand := func(command string) []string {
+		if command != "" {
+			return []string{command}
+		}
+
+		if defaultCommand != "" {
+			return []string{defaultCommand}
+		}
+
+		return []string{shell, "-l"}
+	}
+
 	for i, w := range windows {
 		id := first
 
@@ -172,7 +194,7 @@ func (t tmux) ensure(p config.Project) (string, error) {
 				"-F", "#{window_id}",
 				"-t", session+":",
 				"-n", w.Name,
-				"-c", dirs[i],
+				"-c", dirs[i][0],
 				"sleep 2147483647",
 			)
 
@@ -185,18 +207,50 @@ func (t tmux) ensure(p config.Project) (string, error) {
 			return cleanup(err)
 		}
 
-		args := []string{"respawn-window", "-k", "-t", id, "-c", dirs[i], "--"}
+		panes := windowPanes(w)
+		args := []string{"respawn-window", "-k", "-t", id, "-c", dirs[i][0], "--"}
 
-		if w.Command != "" {
-			args = append(args, w.Command)
-		} else if defaultCommand != "" {
-			args = append(args, defaultCommand)
-		} else {
-			args = append(args, shell, "-l")
+		if _, err = t.run(append(args, startCommand(panes[0].Command)...)...); err != nil {
+			return cleanup(err)
 		}
 
-		if _, err = t.run(args...); err != nil {
-			return cleanup(err)
+		// Splitting the newest pane keeps the configured order. New panes inherit
+		// remain-on-exit from the window, so they start their commands directly.
+		target := id
+
+		for j := 1; j < len(panes); j++ {
+			args := []string{
+				"split-window", "-d", "-P",
+				"-F", "#{pane_id}",
+				"-t", target,
+				"-c", dirs[i][j],
+				"--",
+			}
+			target, err = t.run(append(args, startCommand(panes[j].Command)...)...)
+
+			if err != nil {
+				return cleanup(err)
+			}
+
+			// Rebalance after each split, because repeatedly halving one pane quickly runs out of space.
+			if _, err = t.run("select-layout", "-t", id, "tiled"); err != nil {
+				return cleanup(err)
+			}
+		}
+
+		if w.Layout != "" {
+			if _, err = t.run("select-layout", "-t", id, w.Layout); err != nil {
+				return cleanup(err)
+			}
+
+			// A detached session starts at default-size, and main-* layouts keep their
+			// absolute pane sizes when the window grows. Apply the layout once more on
+			// the first resize, so later manual pane resizing is preserved.
+			hook := fmt.Sprintf("select-layout -t %s %s ; set-hook -uw -t %s window-resized", id, w.Layout, id)
+
+			if _, err = t.run("set-hook", "-w", "-t", id, "window-resized", hook); err != nil {
+				return cleanup(err)
+			}
 		}
 	}
 
@@ -205,6 +259,28 @@ func (t tmux) ensure(p config.Project) (string, error) {
 	}
 
 	return name, nil
+}
+
+// A window without configured panes has one pane running the window command.
+func windowPanes(w config.Window) []config.Pane {
+	if len(w.Panes) > 0 {
+		return w.Panes
+	}
+
+	return []config.Pane{{Command: w.Command}}
+}
+
+// Relative directories resolve against base. Home paths are expanded by config.CanonicalPath.
+func joinDirectory(base, dir string) string {
+	if dir == "" {
+		return base
+	}
+
+	if filepath.IsAbs(dir) || dir == "~" || strings.HasPrefix(dir, "~/") {
+		return dir
+	}
+
+	return filepath.Join(base, dir)
 }
 
 func OpenProject(p config.Project) error {

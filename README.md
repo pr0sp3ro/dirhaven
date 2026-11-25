@@ -148,12 +148,39 @@ Each `[projects.<name>]` section configures one project. Project identifiers acc
 | Window `name` | Required window name |
 | Window `command` | Optional startup command |
 | Window `directory` | Optional working directory, default the project directory |
+| Window `panes` | Optional ordered list of panes, default one pane running the window `command` |
+| Window `layout` | Optional tmux layout for the panes, default `tiled` |
+| Pane `command` | Optional startup command |
+| Pane `directory` | Optional working directory, default the window directory |
 
 The number of windows comes from the list. An empty or omitted list opens one terminal window. Relative window directories are resolved against the project directory. All directories must exist when a new session is created. The example above opens the `config` window in `~/.config`, which must exist.
 
+### Panes
+
+Split a window into panes with a `panes` list:
+
+```toml
+[projects.webapp]
+path = "~/src/webapp"
+windows = [
+    { name = "editor", command = "nvim" },
+    { name = "dev", directory = "frontend", layout = "main-vertical", panes = [
+        { command = "nvim" },
+        { command = "npm run dev" },
+        { directory = "src" },
+    ] },
+]
+```
+
+The list contains every pane of the window in order, and the first pane is the main pane in `main-*` layouts. A pane without `command` opens a terminal. Relative pane directories are resolved against the window directory. A window with `panes` cannot also set `command`.
+
+`layout` accepts the tmux layouts `even-horizontal`, `even-vertical`, `main-horizontal`, `main-vertical`, and `tiled`. With tmux 3.5 or newer, `main-horizontal-mirrored` and `main-vertical-mirrored` are also available. Setting `layout` requires tmux 3.3 or newer. Main pane size follows the tmux options `main-pane-width` and `main-pane-height`.
+
+New sessions start at tmux's `default-size` before a client is attached, so Dirhaven applies the layout once more the first time the window size changes, usually when the window is first shown. If the window already has its final size, this happens on a later resize instead, and pane sizes changed manually before it are reset once.
+
 Paths support `~` and `~/...`. Use absolute project and source paths in manually edited configuration. CLI commands save canonical absolute paths. Relative project or source paths in a manually edited file resolve against the directory from which Dirhaven is invoked. Environment variables in path fields are not expanded.
 
-Window names accept only ASCII letters, digits, spaces, underscores, hyphens, and periods. Source, project, and window directory paths additionally allow `/` and `~`. Resolved symlink targets must follow the same path rules. Other characters, including semicolons, quotes, brackets, and control characters, are rejected. Discovered projects with unsupported paths are skipped. These restrictions do not apply to the shell syntax in `command`, so commands such as `git status; exec zsh -i` remain supported.
+Window names accept only ASCII letters, digits, spaces, underscores, hyphens, and periods. Source, project, window, and pane directory paths additionally allow `/` and `~`. Resolved symlink targets must follow the same path rules. Other characters, including semicolons, quotes, brackets, and control characters, are rejected. Discovered projects with unsupported paths are skipped. These restrictions do not apply to the shell syntax in `command`, so commands such as `git status; exec zsh -i` remain supported.
 
 Projects discovered from sources use their directory names and open one terminal window unless the same canonical path has an explicit project configuration. Explicit settings take precedence for that path. Multiple configured project identifiers pointing to the same canonical directory are rejected when configuration is loaded, saved, or validated after editing.
 
@@ -167,7 +194,7 @@ When a session already exists, Dirhaven attaches to it outside tmux or switches 
 
 For new sessions, windows are created in configuration order and the first window is selected. Commands run as tmux startup commands, with shell syntax available for pipelines and redirection. Windows without a command use tmux's `default-command`, or its `default-shell` as a login shell when no default command is set.
 
-Windows remain visible after their command or shell exits, preserving output and the exit status. Close them using tmux's normal window controls, or restart their process using `respawn-window -k` from the tmux command prompt.
+Windows and panes remain visible after their command or shell exits, preserving output and the exit status. Close them using tmux's normal controls, or restart their process using `respawn-pane -k` from the tmux command prompt. In a window with several panes, `respawn-window -k` closes all panes except one.
 
 All working directories are checked before creation. If window setup fails, Dirhaven attempts to remove only the session created by that invocation. Commands that started before a later failure may already have had effects outside tmux.
 
@@ -189,7 +216,14 @@ Replace the complete window list using a TOML array:
 dirhaven config set projects.example.windows '[{ name = "editor", command = "nvim" }, { name = "terminal" }]'
 ```
 
-`config set` updates configured projects or existing source entries. Add a project with `project add` before setting its fields. Supported keys are `sources.<index>.path`, `projects.<name>.path`, `projects.<name>.favorite`, `projects.<name>.windows`, and `projects.<name>.windows.<index>.name|command|directory`.
+Replace the panes of a window the same way:
+
+```sh
+dirhaven config set projects.example.windows.1.panes '[{ command = "nvim" }, { command = "npm run dev" }]'
+dirhaven config set projects.example.windows.1.layout main-vertical
+```
+
+`config set` updates configured projects or existing source entries. Add a project with `project add` before setting its fields. Supported keys are `sources.<index>.path`, `projects.<name>.path`, `projects.<name>.favorite`, `projects.<name>.windows`, and `projects.<name>.windows.<index>.name|command|directory|layout|panes`.
 
 Open the configuration in your editor:
 
@@ -250,7 +284,7 @@ Run the automated tests locally:
 go test ./...
 ```
 
-To check interactive behavior, open a project outside tmux and then from a tmux client. Confirm window order, working directories, startup commands, and the selected first window. Reopen the project to confirm existing windows remain unchanged. In the picker, toggle a favorite, check that it persists, and cancel with Esc to confirm no session is opened.
+To check interactive behavior, open a project outside tmux and then from a tmux client. Confirm window and pane order, layouts, working directories, startup commands, and the selected first window. Reopen the project to confirm existing windows remain unchanged. In the picker, toggle a favorite, check that it persists, and cancel with Esc to confirm no session is opened.
 
 ## License
 

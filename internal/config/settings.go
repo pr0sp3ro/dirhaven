@@ -19,10 +19,21 @@ func ConfigValue(c Config, key string) (any, error) {
 		windows := make([]any, 0, len(p.Windows))
 
 		for _, w := range p.Windows {
+			panes := make([]any, 0, len(w.Panes))
+
+			for _, pane := range w.Panes {
+				panes = append(panes, map[string]any{
+					"command":   pane.Command,
+					"directory": pane.Directory,
+				})
+			}
+
 			windows = append(windows, map[string]any{
 				"name":      w.Name,
 				"command":   w.Command,
 				"directory": w.Directory,
+				"layout":    w.Layout,
+				"panes":     panes,
 			})
 		}
 
@@ -150,6 +161,20 @@ func SetConfigValue(c *Config, key, value string) error {
 
 		case "directory":
 			p.Windows[i].Directory = value
+
+		case "layout":
+			p.Windows[i].Layout = value
+
+		case "panes":
+			var decoded struct {
+				Panes []Pane `toml:"panes"`
+			}
+
+			if err := toml.NewDecoder(strings.NewReader("panes = " + value)).DisallowUnknownFields().Decode(&decoded); err != nil {
+				return err
+			}
+
+			p.Windows[i].Panes = decoded.Panes
 
 		default:
 			return fmt.Errorf("unknown setting %q", key)
