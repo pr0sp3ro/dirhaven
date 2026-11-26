@@ -223,6 +223,22 @@ func TestDiscoveryDeduplicatesSymlinksAndKeepsExplicitSettings(t *testing.T) {
 	}
 }
 
+func TestDiscoverySkipsGitDirectory(t *testing.T) {
+	root := t.TempDir()
+
+	for _, name := range []string{".git", "demo"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := Projects(Config{Sources: []Source{{Path: root}}})
+
+	if err != nil || len(list) != 1 || list[0].Name != "demo" {
+		t.Fatalf("discovery: %v, %v", list, err)
+	}
+}
+
 func TestSettingsValidateTypesAndPreserveWindowsOnFailure(t *testing.T) {
 	c := Config{Projects: map[string]Project{"demo": {Path: t.TempDir()}}}
 

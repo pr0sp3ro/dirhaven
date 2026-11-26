@@ -331,6 +331,10 @@ func Projects(c Config) ([]Project, error) {
 		}
 
 		for _, entry := range entries {
+			if entry.Name() == ".git" {
+				continue
+			}
+
 			path, err := CanonicalPath(filepath.Join(root, entry.Name()))
 
 			if err != nil || seen[path] {

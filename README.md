@@ -46,7 +46,7 @@ dirhaven source add ~/src
 dirhaven
 ```
 
-Every immediate subdirectory is a project, including directories without Git repositories. Discovery is not recursive. Symlinks to directories are followed and duplicate paths appear once.
+Every immediate subdirectory is a project, including directories without Git repositories. A `.git` directory is skipped. Discovery is not recursive. Symlinks to directories are followed and duplicate paths appear once.
 
 Register an individual project and mark it as a favorite:
 
